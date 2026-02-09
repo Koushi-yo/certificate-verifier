@@ -1,31 +1,30 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 import sqlite3
 import uuid
 import hashlib
-import json
 import os
 
-app = Flask(__name__, template_folder="../frontend")
+app = Flask(__name__)
 CORS(app)
 
-DB_FILE = "certificates.db"
-BASE_URL = "https://certificate-verifier-vasy.onrender.com"
+# ===============================
+# DATABASE (ABSOLUTE, SAFE)
+# ===============================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "certificates.db")
 
-
-# ---------- DATABASE ----------
 def get_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
-
 
 def init_db():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS certificates (
-            certificate_id TEXT PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             payload TEXT,
             signature TEXT
         )
@@ -33,105 +32,104 @@ def init_db():
     conn.commit()
     conn.close()
 
-
 init_db()
 
+# ===============================
+# UTIL
+# ===============================
+def sign_payload(payload: str) -> str:
+    return hashlib.sha256(payload.encode()).hexdigest()
 
-# ---------- UTIL ----------
-def sign_payload(payload: dict) -> str:
-    payload_str = json.dumps(payload, sort_keys=True)
-    return hashlib.sha256(payload_str.encode()).hexdigest()
-
-
-# ---------- ROUTES ----------
-
-@app.route("/")
-def home():
-    return "Certificate Verification Backend is Live"
-
-
-# ISSUE CERTIFICATE
+# ===============================
+# ISSUE CERTIFICATE (API)
+# ===============================
 @app.route("/api/issue", methods=["POST"])
 def issue_certificate():
-    data = request.json
+    data = request.get_json(force=True)
 
-    certificate_id = str(uuid.uuid4())
-    payload = {
-        "certificate_id": certificate_id,
-        "name": data["name"],
-        "university": data["university"],
-        "degree": data["degree"],
-        "branch": data["branch"],
-        "year": data["year"],
-        "cgpa": data["cgpa"]
-    }
-
-    signature = sign_payload(payload)
+    cert_id = str(uuid.uuid4())
+    payload_str = str(sorted(data.items()))
+    signature = sign_payload(payload_str)
 
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO certificates VALUES (?, ?, ?)",
-        (certificate_id, json.dumps(payload), signature)
+        "INSERT INTO certificates (id, payload, signature) VALUES (?, ?, ?)",
+        (cert_id, payload_str, signature)
     )
     conn.commit()
     conn.close()
 
+    verify_url = f"https://certificate-verifier-vasy.onrender.com/verify/{cert_id}"
+
     return jsonify({
-        "certificate_id": certificate_id,
-        "verify_url": f"{BASE_URL}/verify/{certificate_id}"
+        "certificate_id": cert_id,
+        "signature": signature,
+        "verify_url": verify_url
     })
 
+# ===============================
+# VERIFY PAGE (PROFESSIONAL)
+# ===============================
+VERIFY_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Certificate Verification</title>
+    <style>
+        body { font-family: Arial; background:#f5f5f5; padding:40px }
+        .box { background:white; padding:30px; border-radius:8px; max-width:600px; margin:auto }
+        .ok { color:green; font-size:24px }
+        .bad { color:red; font-size:24px }
+        code { background:#eee; padding:5px }
+    </style>
+</head>
+<body>
+<div class="box">
+    {% if valid %}
+        <div class="ok">✔ CERTIFICATE IS VALID</div>
+        <p><b>Certificate ID:</b> <code>{{ cert_id }}</code></p>
+        <p><b>Signature:</b></p>
+        <code>{{ signature }}</code>
+    {% else %}
+        <div class="bad">✖ INVALID CERTIFICATE</div>
+        <p>Certificate not found.</p>
+    {% endif %}
+</div>
+</body>
+</html>
+"""
 
-# VERIFY API (JSON)
-@app.route("/api/verify/<certificate_id>")
-def verify_api(certificate_id):
+@app.route("/verify/<cert_id>")
+def verify(cert_id):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute(
-        "SELECT payload, signature FROM certificates WHERE certificate_id=?",
-        (certificate_id,)
-    )
+    cur.execute("SELECT * FROM certificates WHERE id = ?", (cert_id,))
     row = cur.fetchone()
     conn.close()
 
-    if not row:
-        return jsonify({"valid": False})
+    if row:
+        return render_template_string(
+            VERIFY_HTML,
+            valid=True,
+            cert_id=row["id"],
+            signature=row["signature"]
+        )
+    else:
+        return render_template_string(
+            VERIFY_HTML,
+            valid=False
+        )
 
-    payload = json.loads(row["payload"])
-    expected_signature = sign_payload(payload)
+# ===============================
+# HOME
+# ===============================
+@app.route("/")
+def home():
+    return jsonify({"status": "Certificate Verifier API is running"})
 
-    return jsonify({
-        "valid": expected_signature == row["signature"],
-        "data": payload
-    })
-
-
-# VERIFY PAGE (UI)
-@app.route("/verify/<certificate_id>")
-def verify_page(certificate_id):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT payload, signature FROM certificates WHERE certificate_id=?",
-        (certificate_id,)
-    )
-    row = cur.fetchone()
-    conn.close()
-
-    if not row:
-        return render_template("verify.html", valid=False)
-
-    payload = json.loads(row["payload"])
-    expected_signature = sign_payload(payload)
-    valid = expected_signature == row["signature"]
-
-    return render_template(
-        "verify.html",
-        valid=valid,
-        cert=payload
-    )
-
-
+# ===============================
+# START
+# ===============================
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=10000)
