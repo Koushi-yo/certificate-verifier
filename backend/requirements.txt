@@ -5,3 +5,4 @@ reportlab
 qrcode
 pyhanko
 cryptography
+qrcode[pil]
