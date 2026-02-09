@@ -1,55 +1,67 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Verify Digitally Signed Certificate</title>
+    <title>Certificate Verification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            padding: 40px;
+        }
+        .card {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .valid {
+            color: green;
+            font-size: 22px;
+            font-weight: bold;
+        }
+        .invalid {
+            color: red;
+            font-size: 22px;
+            font-weight: bold;
+        }
+        .row {
+            margin: 10px 0;
+        }
+        .label {
+            font-weight: bold;
+        }
+        .footer {
+            margin-top: 30px;
+            font-size: 13px;
+            color: gray;
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
-  <h2>Verify Certificate (QR Payload)</h2>
 
-  <p>Paste scanned QR payload (JSON):</p>
+<div class="card">
+    {% if valid %}
+        <div class="valid">✅ Certificate Verified Successfully</div>
+        <hr>
 
-  <textarea id="payloadInput" rows="12" cols="80"></textarea>
+        <div class="row"><span class="label">Name:</span> {{ cert.name }}</div>
+        <div class="row"><span class="label">University:</span> {{ cert.university }}</div>
+        <div class="row"><span class="label">Degree:</span> {{ cert.degree }}</div>
+        <div class="row"><span class="label">Branch:</span> {{ cert.branch }}</div>
+        <div class="row"><span class="label">Year:</span> {{ cert.year }}</div>
+        <div class="row"><span class="label">CGPA:</span> {{ cert.cgpa }}</div>
+        <div class="row"><span class="label">Certificate ID:</span> {{ cert.certificate_id }}</div>
+    {% else %}
+        <div class="invalid">❌ Invalid or Tampered Certificate</div>
+    {% endif %}
 
-  <br><br>
-  <button onclick="verifyCert()">Verify</button>
+    <div class="footer">
+        Powered by Certificate Verification System
+    </div>
+</div>
 
-  <h3 id="result"></h3>
-
-  <script>
-    function verifyCert() {
-      let payload;
-
-      try {
-        payload = JSON.parse(
-          document.getElementById("payloadInput").value
-        );
-      } catch {
-        alert("Invalid QR JSON payload");
-        return;
-      }
-
-      if (!payload.certificate || !payload.signature) {
-        alert("Payload must contain certificate and signature");
-        return;
-      }
-
-      fetch("http://127.0.0.1:5000/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          certificate: payload.certificate,
-          signature: payload.signature
-        })
-      })
-      .then(res => res.json())
-      .then(result => {
-        document.getElementById("result").innerText =
-          result.valid
-            ? "✅ Certificate is AUTHENTIC"
-            : "❌ Certificate is TAMPERED or FAKE";
-      })
-      .catch(() => alert("Backend not reachable"));
-    }
-  </script>
 </body>
 </html>
