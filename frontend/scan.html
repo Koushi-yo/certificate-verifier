@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Scan & Verify Certificate</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+  <h2>Scan QR Code to Verify Certificate</h2>
+
+  <div id="reader" style="width:350px;"></div>
+
+  <h3 id="result"></h3>
+
+  <script>
+    function onScanSuccess(decodedText) {
+      console.log("QR Payload:", decodedText);
+
+      let payload;
+      try {
+        payload = JSON.parse(decodedText);
+      } catch {
+        document.getElementById("result").innerText =
+          "❌ Invalid QR data";
+        return;
+      }
+
+      fetch("http://127.0.0.1:5000/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          certificate: payload.certificate,
+          signature: payload.signature
+        })
+      })
+      .then(res => res.json())
+      .then(result => {
+        document.getElementById("result").innerText =
+          result.valid
+            ? "✅ Certificate is AUTHENTIC"
+            : "❌ Certificate is FAKE or TAMPERED";
+      });
+    }
+
+    const html5QrCode = new Html5Qrcode("reader");
+
+    html5QrCode.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: 250
+      },
+      onScanSuccess
+    );
+  </script>
+</body>
+</html>

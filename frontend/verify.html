@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Verify Digitally Signed Certificate</title>
+</head>
+<body>
+  <h2>Verify Certificate (QR Payload)</h2>
+
+  <p>Paste scanned QR payload (JSON):</p>
+
+  <textarea id="payloadInput" rows="12" cols="80"></textarea>
+
+  <br><br>
+  <button onclick="verifyCert()">Verify</button>
+
+  <h3 id="result"></h3>
+
+  <script>
+    function verifyCert() {
+      let payload;
+
+      try {
+        payload = JSON.parse(
+          document.getElementById("payloadInput").value
+        );
+      } catch {
+        alert("Invalid QR JSON payload");
+        return;
+      }
+
+      if (!payload.certificate || !payload.signature) {
+        alert("Payload must contain certificate and signature");
+        return;
+      }
+
+      fetch("http://127.0.0.1:5000/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          certificate: payload.certificate,
+          signature: payload.signature
+        })
+      })
+      .then(res => res.json())
+      .then(result => {
+        document.getElementById("result").innerText =
+          result.valid
+            ? "✅ Certificate is AUTHENTIC"
+            : "❌ Certificate is TAMPERED or FAKE";
+      })
+      .catch(() => alert("Backend not reachable"));
+    }
+  </script>
+</body>
+</html>
