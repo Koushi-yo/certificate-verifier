@@ -1,112 +1,109 @@
-from flask import Flask, request, jsonify, render_template, abort
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 import sqlite3
 import uuid
+import hashlib
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")
-DB_PATH = os.path.join(BASE_DIR, "certificates.db")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+DB_PATH = os.path.join(os.path.dirname(__file__), "certificates.db")
 
-app = Flask(
-    __name__,
-    template_folder=FRONTEND_DIR
-)
+app = Flask(__name__)
+CORS(app)
 
-# -------------------------
+# -----------------------------
 # DATABASE INIT
-# -------------------------
+# -----------------------------
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS certificates (
-            token TEXT PRIMARY KEY,
-            issuer TEXT,
-            doc_type TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS certificates (
+                certificate_id TEXT PRIMARY KEY,
+                signature TEXT NOT NULL
+            )
+        """)
+        conn.commit()
 
 init_db()
 
-# -------------------------
+# -----------------------------
 # HOME
-# -------------------------
+# -----------------------------
 @app.route("/")
 def home():
-    return "Certificate Verification Service is LIVE"
+    return "<h2>Certificate Verification Service is LIVE</h2>"
 
-# -------------------------
-# ISSUE PAGE (UNIVERSITY)
-# -------------------------
-@app.route("/issue", methods=["GET"])
+# -----------------------------
+# FRONTEND ROUTES
+# -----------------------------
+@app.route("/issue")
 def issue_page():
-    return render_template("issue.html")
+    return send_from_directory(FRONTEND_DIR, "issue.html")
 
+@app.route("/scan")
+def scan_page():
+    return send_from_directory(FRONTEND_DIR, "scan.html")
+
+@app.route("/verify-page")
+def verify_page():
+    return send_from_directory(FRONTEND_DIR, "verify.html")
+
+# -----------------------------
+# API: ISSUE CERTIFICATE
+# -----------------------------
 @app.route("/api/issue", methods=["POST"])
 def issue_certificate():
-    data = request.get_json()
-    issuer = data.get("university", "Unknown University")
-    doc_type = data.get("degree", "Academic Certificate")
+    data = request.json
 
-    token = str(uuid.uuid4())
-
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO certificates VALUES (?, ?, ?)",
-        (token, issuer, doc_type)
+    payload = (
+        data.get("name", "") +
+        data.get("university", "") +
+        data.get("degree", "") +
+        data.get("branch", "") +
+        data.get("year", "") +
+        data.get("cgpa", "")
     )
-    conn.commit()
-    conn.close()
 
-    verify_url = f"https://certificate-verifier-vasy.onrender.com/verify/{token}"
+    certificate_id = str(uuid.uuid4())
+    signature = hashlib.sha256(payload.encode()).hexdigest()
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO certificates (certificate_id, signature) VALUES (?, ?)",
+            (certificate_id, signature)
+        )
+        conn.commit()
+
+    verify_url = f"{request.host_url}verify/{certificate_id}"
 
     return jsonify({
+        "certificate_id": certificate_id,
         "verify_url": verify_url
     })
 
-# -------------------------
-# SCAN PAGE (OPTIONAL)
-# -------------------------
-@app.route("/scan")
-def scan_page():
-    return render_template("scan.html")
+# -----------------------------
+# VERIFY CERTIFICATE
+# -----------------------------
+@app.route("/verify/<certificate_id>")
+def verify_certificate(certificate_id):
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT certificate_id FROM certificates WHERE certificate_id = ?",
+            (certificate_id,)
+        )
+        row = cur.fetchone()
 
-# -------------------------
-# VERIFY VIA TOKEN (QR FLOW)
-# -------------------------
-@app.route("/verify/<token>")
-def verify_token(token):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT issuer, doc_type FROM certificates WHERE token=?",
-        (token,)
-    )
-    row = cur.fetchone()
-    conn.close()
+    if row:
+        return send_from_directory(FRONTEND_DIR, "valid.html")
+    else:
+        return send_from_directory(FRONTEND_DIR, "invalid.html")
 
-    if not row:
-        return render_template("invalid.html")
-
-    issuer, doc_type = row
-    return render_template(
-        "valid.html",
-        issuer=issuer,
-        doc_type=doc_type
-    )
-
-# -------------------------
-# MANUAL VERIFY PAGE (OPTIONAL)
-# -------------------------
-@app.route("/verify")
-def verify_page():
-    return render_template("verify.html")
-
-# -------------------------
-# RUN
-# -------------------------
+# -----------------------------
+# START
+# -----------------------------
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=10000)
