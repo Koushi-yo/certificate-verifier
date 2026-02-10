@@ -1,53 +1,31 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Issue Certificate (Signed + QR)</title>
+    <title>Issue Certificate</title>
 </head>
 <body>
-  <h2>Issue Digitally Signed Certificate</h2>
+    <h2>Issue Certificate (University)</h2>
+    <form id="issueForm">
+        <input placeholder="University" id="university"><br><br>
+        <input placeholder="Degree / Certificate Type" id="degree"><br><br>
+        <button type="submit">Issue</button>
+    </form>
 
-  <textarea id="certData" rows="8" cols="70">
-{
-  "name": "Koushi",
-  "university": "Amrita University",
-  "degree": "B.Tech",
-  "branch": "AI & Data Science",
-  "year": "2026",
-  "cgpa": "9.1"
-}
-  </textarea>
+    <pre id="output"></pre>
 
-  <br><br>
-  <button onclick="issueCert()">Issue</button>
-
-  <h3>Digital Signature</h3>
-  <pre id="signature"></pre>
-
-  <h3>QR Code</h3>
-  <img id="qrImage" />
-
-  <script>
-    function issueCert() {
-      let cert;
-      try {
-        cert = JSON.parse(document.getElementById("certData").value);
-      } catch {
-        alert("Invalid JSON");
-        return;
-      }
-
-      fetch("http://127.0.0.1:5000/issue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cert)
-      })
-      .then(res => res.json())
-      .then(result => {
-        document.getElementById("signature").innerText = result.signature;
-        document.getElementById("qrImage").src =
-          "data:image/png;base64," + result.qr_code;
-      });
-    }
-  </script>
+    <script>
+        document.getElementById("issueForm").onsubmit = async (e) => {
+            e.preventDefault();
+            const res = await fetch("/api/issue", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    university: university.value,
+                    degree: degree.value
+                })
+            });
+            output.innerText = JSON.stringify(await res.json(), null, 2);
+        };
+    </script>
 </body>
 </html>
